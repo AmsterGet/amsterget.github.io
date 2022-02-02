@@ -29,6 +29,7 @@ const Router = Backbone.Router.extend({
     '': 'openIndex',
     docs: 'openDocumentation',
     'docs/:id': 'openDocumentation',
+    prices: 'openPrices',
     community: 'openCommunity',
     installation: 'openInstallation',
     'installation/integration': 'openInstallationIntegration',
@@ -41,6 +42,10 @@ const Router = Backbone.Router.extend({
   },
   openIndex() {
     this.context.renderIndex();
+    this.header.$el.addClass('without-shadow');
+  },
+  openPrices() {
+    this.context.renderPrices();
     this.header.$el.addClass('without-shadow');
   },
   openCommunity() {

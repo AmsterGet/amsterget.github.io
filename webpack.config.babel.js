@@ -24,6 +24,7 @@ module.exports = (env = defaultEnv) => ({
     path: path.resolve(__dirname, 'dist'),
     filename: 'app.[contenthash:6].js',
     assetModuleFilename: 'resources/[name].[contenthash:6][ext]',
+    clean: true,
   },
   resolve: {
     alias: {
@@ -38,11 +39,10 @@ module.exports = (env = defaultEnv) => ({
   module: {
     rules: [
       {
-        test: /\.js$/,
+        test: /\.(js|jsx)$/,
         exclude: /(node_modules|bower_components)/,
         loader: 'babel-loader',
         options: {
-          presets: ['@babel/preset-env'],
           cacheDirectory: path.join(root, '.cache'),
         },
       },
@@ -68,7 +68,7 @@ module.exports = (env = defaultEnv) => ({
               resources: [
                 path.resolve(__dirname, 'src/common/css/variables/**/*.scss'),
                 path.resolve(__dirname, 'src/common/css/mixins.scss'),
-              ]
+              ],
             },
           },
         ],
