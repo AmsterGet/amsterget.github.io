@@ -1,11 +1,13 @@
-import path from 'path';
-import webpack from 'webpack';
-import HtmlWebpackPlugin from 'html-webpack-plugin';
-import WebpackNotifierPlugin from 'webpack-notifier';
-import ExtractTextPlugin from 'extract-text-webpack-plugin';
-import CleanWebpackPlugin from 'clean-webpack-plugin';
-import CompressionPlugin from 'compression-webpack-plugin';
-import CopyWebpackPlugin from 'copy-webpack-plugin';
+const path = require('path');
+const webpack = require('webpack');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const WebpackNotifierPlugin = require('webpack-notifier');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const CompressionPlugin = require('compression-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const { CleanWebpackPlugin } = require('clean-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
+const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 
 const root = path.join(__dirname, '/');
 const defaultEnv = {
@@ -14,14 +16,16 @@ const defaultEnv = {
   production: false,
 };
 
-export default (env = defaultEnv) => ({
+module.exports = (env = defaultEnv) => ({
+  mode: process.env.production ? 'production' : 'development',
   entry: ['./src/application.js'],
   output: {
     publicPath: '/',
     path: path.resolve(__dirname, 'dist'),
-    filename: 'app.[hash:6].js',
+    filename: 'app.[contenthash:6].js',
+    assetModuleFilename: 'resources/[name].[contenthash:6][ext]',
+    clean: true,
   },
-  watch: env.dev,
   resolve: {
     alias: {
       modernizr: path.resolve(__dirname, '.modernizrrc'),
@@ -35,58 +39,52 @@ export default (env = defaultEnv) => ({
   module: {
     rules: [
       {
-        test: /\.js$/,
+        test: /\.(js|jsx)$/,
         exclude: /(node_modules|bower_components)/,
         loader: 'babel-loader',
-        options: { babelrc: false, presets: [['es2015', { modules: false }]], cacheDirectory: path.join(root, '.cache') },
-      },
-      {
-        test: /\.jade$/,
-        loader: 'jade-loader',
-      },
-      {
-        test: /\.scss$/,
-        use: ExtractTextPlugin.extract({
-          fallback: 'style-loader',
-          use: [
-            { loader: 'css-loader', options: { sourceMap: env.dev } },
-            { loader: 'sass-loader', options: { sourceMap: env.dev } },
-            { loader: 'sass-resources-loader', options: { resources: path.resolve(__dirname, 'src/common/css/variables/**/*.scss') } },
-          ],
-        }),
-      },
-      {
-        test: /\.css$/,
-        use: ExtractTextPlugin.extract({
-          fallback: 'style-loader',
-          use: ['css-loader'],
-        }),
-      },
-      {
-        test: /\.(gif|png|jpg|ttf|eot|svg|woff2)$/,
-        loader: 'url-loader',
         options: {
-          limit: 1000,
-          name: 'resources/[name].[hash:6].[ext]',
+          cacheDirectory: path.join(root, '.cache'),
         },
       },
       {
-        // include woff font on css
-        test: /\.(woff)$/,
-        loader: 'url-loader',
+        test: /\.(jade|pug)$/,
+        loader: 'pug-loader',
       },
       {
-        test: /\.modernizrrc.js$/,
-        loader: 'modernizr-loader',
+        test: /\.css$/,
+        use: [MiniCssExtractPlugin.loader, 'css-loader'],
       },
       {
-        test: /\.modernizrrc(\.json)?$/,
-        loader: 'modernizr-loader!json-loader',
+        test: /\.scss$/,
+        use: [
+          {
+            loader: MiniCssExtractPlugin.loader,
+          },
+          { loader: 'css-loader', options: { sourceMap: env.dev } },
+          { loader: 'sass-loader', options: { sourceMap: env.dev } },
+          {
+            loader: 'sass-resources-loader',
+            options: {
+              resources: [
+                path.resolve(__dirname, 'src/common/css/variables/**/*.scss'),
+                path.resolve(__dirname, 'src/common/css/mixins.scss'),
+              ],
+            },
+          },
+        ],
+      },
+      {
+        test: /\.(gif|png|jpg|svg|woff|woff2|ttf|eot)$/,
+        type: 'asset/resource',
+      },
+      {
+        test: /.modernizrrc.js$/,
+        loader: 'webpack-modernizr-loader',
       },
     ],
   },
   plugins: [
-    new ExtractTextPlugin({ filename: '[name].[hash:6].css', allChunks: true }),
+    new MiniCssExtractPlugin({ filename: '[name].[fullhash:6].css' }),
     new HtmlWebpackPlugin({ template: './src/index.jade' }),
     new webpack.HotModuleReplacementPlugin(),
     new WebpackNotifierPlugin({ skipFirstNotification: true }),
@@ -94,15 +92,17 @@ export default (env = defaultEnv) => ({
       LOCAL_DOCUMENTATION: JSON.stringify(env.proxyDocumentation),
     }),
     ...env.production ? [
-      new CleanWebpackPlugin([path.resolve(__dirname, 'dist')]),
-      new CopyWebpackPlugin([
-        { from: 'CNAME' },
-        { from: 'sitemap.xml' },
-        { from: 'google95cc3d56e1325c3b.html' },
-        { from: 'src/404.html' },
-      ]),
+      new CleanWebpackPlugin(),
+      new CopyWebpackPlugin({
+        patterns: [
+          { from: 'CNAME' },
+          { from: 'sitemap.xml' },
+          { from: 'google95cc3d56e1325c3b.html' },
+          { from: 'src/404.html' },
+        ],
+      }),
       new CompressionPlugin({
-        asset: '[path].gz[query]',
+        filename: '[path][base].gz',
         algorithm: 'gzip',
         threshold: 10240,
         minRatio: 0.8,
@@ -124,24 +124,35 @@ export default (env = defaultEnv) => ({
       aggregateTimeout: 200,
       poll: 1000,
     },
-    proxy: [
-      ...env.proxyDocumentation ? [
-        {
-          path: '/documentation.html*',
-          target: 'http://localhost:9020/',
-          bypass(req, res, options) {
-            console.log(`proxy url: ${req.url}`);
-          },
+    proxy: env.proxyDocumentation ? {
+      '/documentation.html*': {
+        target: 'http://localhost:9020/',
+        bypass(req, res, options) {
+          console.log(`proxy url: ${req.url}`);
         },
-        {
-          path: '/docs/Images/**',
-          pathRewrite: { '^/docs': '' },
-          target: 'http://localhost:9020/',
-          bypass(req, res, options) {
-            console.log(`proxy url: ${req.url}`);
-          },
+      },
+      '/docs/Images/**': {
+        pathRewrite: { '^/docs': '' },
+        target: 'http://localhost:9020/',
+        bypass(req, res, options) {
+          console.log(`proxy url: ${req.url}`);
         },
-      ] : [{}],
-    ],
+      },
+    } : {},
+
+  },
+  optimization: {
+    minimize: !!env.production,
+    minimizer: env.production ? [new TerserPlugin({
+      terserOptions: {
+        format: {
+          comments: false,
+        },
+      },
+      extractComments: false,
+    }), new CssMinimizerPlugin()] : [],
+  },
+  performance: {
+    hints: false,
   },
 });
